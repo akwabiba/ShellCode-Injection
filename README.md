@@ -20,7 +20,7 @@
           
 # File: Process_Hollowing.cs
 
-    Download and decrypt a shellcode from a remote webserver, then inject it using Process Hollowing technique
+    Download and decrypt a shellcode from a remote webserver, then execute it using Process Hollowing technique
     
 # Usage
 
